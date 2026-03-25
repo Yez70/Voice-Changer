@@ -371,6 +371,7 @@ let currentVoiceId = 'normal';
 let analyserNode = null;
 let outputNode = null;
 let isRunning = false;
+let monitorEnabled = false;
 let mediaRecorder = null;
 let recordedChunks = [];
 let recordingCount = 0;
@@ -381,6 +382,7 @@ const stopRecordBtn = document.getElementById('stopRecordBtn');
 const voiceGrid = document.getElementById('voiceGrid');
 const visualizer = document.getElementById('visualizer');
 const canvasCtx = visualizer.getContext('2d');
+const monitorBtn = document.getElementById('monitorBtn');
 const playbackSection = document.getElementById('playbackSection');
 const recordingsDiv = document.getElementById('recordings');
 
@@ -437,8 +439,10 @@ function rebuildAudioGraph() {
     processed.connect(outputNode);
   }
 
-  // Also play through speakers
-  analyserNode.connect(audioCtx.destination);
+  // Only play through speakers if monitor is on (use headphones!)
+  if (monitorEnabled) {
+    analyserNode.connect(audioCtx.destination);
+  }
 }
 
 // ── Start / Stop Microphone ──────────────────────────────────────────
@@ -467,6 +471,7 @@ startBtn.addEventListener('click', async () => {
     startBtn.innerHTML = '<span class="icon">&#9632;</span> Stop Microphone';
     startBtn.classList.add('active');
     recordBtn.disabled = false;
+    monitorBtn.disabled = false;
 
     drawVisualizer();
   } catch (err) {
@@ -493,9 +498,26 @@ function stopMic() {
   startBtn.innerHTML = '<span class="icon">&#9679;</span> Start Microphone';
   startBtn.classList.remove('active');
   recordBtn.disabled = true;
+  monitorBtn.disabled = true;
+  monitorEnabled = false;
+  monitorBtn.classList.remove('active');
+  monitorBtn.textContent = '\ud83c\udfa7 Monitor (Headphones)';
   stopRecordBtn.style.display = 'none';
   recordBtn.style.display = '';
 }
+
+// ── Monitor Toggle ───────────────────────────────────────────────────
+
+monitorBtn.addEventListener('click', () => {
+  monitorEnabled = !monitorEnabled;
+  monitorBtn.classList.toggle('active', monitorEnabled);
+  monitorBtn.textContent = monitorEnabled
+    ? '\ud83c\udfa7 Monitor ON'
+    : '\ud83c\udfa7 Monitor (Headphones)';
+  if (isRunning) {
+    rebuildAudioGraph();
+  }
+});
 
 // ── Recording ────────────────────────────────────────────────────────
 

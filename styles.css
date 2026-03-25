@@ -86,6 +86,22 @@ h1 {
   color: white;
 }
 
+.btn-monitor {
+  background: linear-gradient(135deg, #4a5568, #2d3748);
+  color: white;
+}
+
+.btn-monitor.active {
+  background: linear-gradient(135deg, #38a169, #2f855a);
+}
+
+.hint {
+  text-align: center;
+  color: #888;
+  font-size: 0.85rem;
+  margin-bottom: 1.5rem;
+}
+
 .visualizer-container {
   background: #1a1a2e;
   border-radius: 12px;
