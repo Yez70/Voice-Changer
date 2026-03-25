@@ -444,7 +444,11 @@ function createPitchShifter(ctx, pitchRatio) {
     const out = e.outputBuffer.getChannelData(0);
     for (let i = 0; i < out.length; i++) out[i] = 0;
   };
-  inputCollector.connect(ctx.destination);
+  // Connect to a silent gain node (ScriptProcessor needs a destination to run)
+  const silentNode = ctx.createGain();
+  silentNode.gain.value = 0;
+  inputCollector.connect(silentNode);
+  silentNode.connect(ctx.destination);
 
   let readPos = 0;
   processor.onaudioprocess = function (e) {
