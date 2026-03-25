@@ -459,7 +459,7 @@ function getSupportedMimeType() {
 
 // ── Play with Voice Effect ───────────────────────────────────────────
 
-function playWithVoice(voiceId) {
+async function playWithVoice(voiceId) {
   if (!rawRecordingBuffer) {
     status.textContent = 'Record your voice first!';
     return;
@@ -471,6 +471,14 @@ function playWithVoice(voiceId) {
     currentSource = null;
   }
 
+  // Ensure audio context is running (mobile browsers suspend it)
+  if (!audioCtx || audioCtx.state === 'closed') {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (audioCtx.state === 'suspended') {
+    await audioCtx.resume();
+  }
+
   const voice = VOICES.find(v => v.id === voiceId);
 
   // Highlight active card
@@ -480,26 +488,16 @@ function playWithVoice(voiceId) {
   const card = document.querySelector(`[data-voice-id="${voiceId}"]`);
   card.classList.add('active', 'playing');
 
-  // Create a copy of the buffer to process
-  const bufferCopy = audioCtx.createBuffer(
-    rawRecordingBuffer.numberOfChannels,
-    rawRecordingBuffer.length,
-    rawRecordingBuffer.sampleRate
-  );
-  for (let ch = 0; ch < rawRecordingBuffer.numberOfChannels; ch++) {
-    bufferCopy.copyToChannel(rawRecordingBuffer.getChannelData(ch).slice(), ch);
-  }
+  // Render the effect offline first (guarantees download and playback match)
+  const rendered = await renderVoice(voice);
 
-  // Apply the voice effect to the buffer
-  voice.apply(audioCtx, bufferCopy);
-
-  // Play it
+  // Play the rendered buffer
   const source = audioCtx.createBufferSource();
-  source.buffer = bufferCopy;
-  source.playbackRate.value = voice.playbackRate;
+  source.buffer = rendered;
   source.connect(audioCtx.destination);
   source.start();
   currentSource = source;
+  lastRendered = { voiceId, buffer: rendered };
 
   status.textContent = `Playing: ${voice.name}`;
 
@@ -512,54 +510,67 @@ function playWithVoice(voiceId) {
   };
 }
 
-// ── Play Original ────────────────────────────────────────────────────
+// Render a voice effect to a new AudioBuffer using OfflineAudioContext
+async function renderVoice(voice) {
+  const sampleRate = rawRecordingBuffer.sampleRate;
+  const outputLength = Math.ceil(rawRecordingBuffer.length / voice.playbackRate);
 
-playOriginalBtn.addEventListener('click', () => playWithVoice('normal'));
+  const offlineCtx = new OfflineAudioContext(1, outputLength, sampleRate);
 
-// ── Download ─────────────────────────────────────────────────────────
-
-downloadBtn.addEventListener('click', () => {
-  if (!rawRecordingBuffer) return;
-
-  // Find currently active voice
-  const activeCard = document.querySelector('.voice-card.active');
-  const voiceId = activeCard ? activeCard.dataset.voiceId : 'normal';
-  const voice = VOICES.find(v => v.id === voiceId);
-
-  // Create offline context at modified speed
-  const duration = rawRecordingBuffer.duration / voice.playbackRate;
-  const offlineCtx = new OfflineAudioContext(
-    1,
-    Math.ceil(duration * rawRecordingBuffer.sampleRate),
-    rawRecordingBuffer.sampleRate
-  );
-
+  // Copy the raw buffer
   const bufferCopy = offlineCtx.createBuffer(
     rawRecordingBuffer.numberOfChannels,
     rawRecordingBuffer.length,
-    rawRecordingBuffer.sampleRate
+    sampleRate
   );
   for (let ch = 0; ch < rawRecordingBuffer.numberOfChannels; ch++) {
     bufferCopy.copyToChannel(rawRecordingBuffer.getChannelData(ch).slice(), ch);
   }
+
+  // Apply DSP effects to the buffer data
   voice.apply(offlineCtx, bufferCopy);
 
+  // Play through offline context with playback rate
   const source = offlineCtx.createBufferSource();
   source.buffer = bufferCopy;
   source.playbackRate.value = voice.playbackRate;
   source.connect(offlineCtx.destination);
   source.start();
 
-  offlineCtx.startRendering().then(renderedBuffer => {
-    const wav = audioBufferToWav(renderedBuffer);
-    const blob = new Blob([wav], { type: 'audio/wav' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `voice_${voiceId}.wav`;
-    a.click();
-    URL.revokeObjectURL(url);
-  });
+  return offlineCtx.startRendering();
+}
+
+let lastRendered = null;
+
+// ── Play Original ────────────────────────────────────────────────────
+
+playOriginalBtn.addEventListener('click', () => playWithVoice('normal'));
+
+// ── Download ─────────────────────────────────────────────────────────
+
+downloadBtn.addEventListener('click', async () => {
+  if (!rawRecordingBuffer) return;
+
+  // Use the last rendered voice, or render normal
+  let voiceId = 'normal';
+  let rendered;
+
+  if (lastRendered) {
+    voiceId = lastRendered.voiceId;
+    rendered = lastRendered.buffer;
+  } else {
+    const voice = VOICES.find(v => v.id === 'normal');
+    rendered = await renderVoice(voice);
+  }
+
+  const wav = audioBufferToWav(rendered);
+  const blob = new Blob([wav], { type: 'audio/wav' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `voice_${voiceId}.wav`;
+  a.click();
+  URL.revokeObjectURL(url);
 });
 
 // ── WAV Encoder ──────────────────────────────────────────────────────
