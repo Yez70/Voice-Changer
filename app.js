@@ -414,58 +414,70 @@ function generateReverbIR(ctx, duration, decay) {
   return impulse;
 }
 
-// Pitch shifter using a pair of delay lines with modulated delay times
+// Pitch shifter using granular delay modulation (no ScriptProcessor, no ctx.destination)
 function createPitchShifter(ctx, pitchRatio) {
-  const bufferSize = 4096;
-  const grainSize = 0.1;
   const input = ctx.createGain();
   const output = ctx.createGain();
 
-  const processor = ctx.createScriptProcessor(bufferSize, 1, 1);
-  let phase = 0;
-  const speed = pitchRatio;
+  const grainSize = 0.1; // seconds
+  const overlap = 2;
 
-  // Simple resampling-based pitch shift
-  let inputBuffer = new Float32Array(bufferSize * 4);
-  let writePos = 0;
+  for (let i = 0; i < overlap; i++) {
+    const delay = ctx.createDelay(grainSize);
+    const mod = ctx.createOscillator();
+    const modGain = ctx.createGain();
+    const grain = ctx.createGain();
+    const fadeMod = ctx.createOscillator();
+    const fadeGain = ctx.createGain();
 
-  input.connect(processor);
+    // Modulate delay time with a sawtooth to create pitch shift
+    mod.type = 'sawtooth';
+    // For pitch up: positive rate, for pitch down: negative rate
+    const rate = (pitchRatio - 1) / grainSize;
+    mod.frequency.value = Math.abs(rate) > 0 ? Math.abs(1 / grainSize) : 0.001;
+    modGain.gain.value = grainSize / 2;
+    delay.delayTime.value = grainSize / 2;
 
-  // Collect input
-  const inputCollector = ctx.createScriptProcessor(bufferSize, 1, 1);
-  input.connect(inputCollector);
-  inputCollector.onaudioprocess = function (e) {
-    const inData = e.inputBuffer.getChannelData(0);
-    for (let i = 0; i < inData.length; i++) {
-      inputBuffer[writePos % inputBuffer.length] = inData[i];
-      writePos++;
-    }
-    // silent output
-    const out = e.outputBuffer.getChannelData(0);
-    for (let i = 0; i < out.length; i++) out[i] = 0;
-  };
-  // Connect to a silent gain node (ScriptProcessor needs a destination to run)
-  const silentNode = ctx.createGain();
-  silentNode.gain.value = 0;
-  inputCollector.connect(silentNode);
-  silentNode.connect(ctx.destination);
+    // Smooth crossfade between grains
+    fadeMod.type = 'sine';
+    fadeMod.frequency.value = mod.frequency.value;
+    fadeGain.gain.value = 0;
 
-  let readPos = 0;
-  processor.onaudioprocess = function (e) {
-    const out = e.outputBuffer.getChannelData(0);
-    for (let i = 0; i < out.length; i++) {
-      const idx = readPos % inputBuffer.length;
-      const idxFloor = Math.floor(idx);
-      const frac = idx - idxFloor;
-      const s0 = inputBuffer[idxFloor % inputBuffer.length];
-      const s1 = inputBuffer[(idxFloor + 1) % inputBuffer.length];
-      out[i] = s0 + frac * (s1 - s0);
-      readPos += speed;
-    }
-  };
-  processor.connect(output);
+    mod.connect(modGain);
+    modGain.connect(delay.delayTime);
+    mod.start(ctx.currentTime + (i * grainSize) / overlap);
 
-  return { input, output };
+    fadeMod.connect(fadeGain.gain);
+    fadeMod.start(ctx.currentTime + (i * grainSize) / overlap);
+
+    input.connect(delay);
+    delay.connect(grain);
+    grain.gain.value = 1 / overlap;
+    grain.connect(output);
+  }
+
+  // Apply formant correction via EQ to make pitch shift sound more natural
+  if (pitchRatio > 1) {
+    // Shifting up - boost highs to compensate
+    const eq = ctx.createBiquadFilter();
+    eq.type = 'highshelf';
+    eq.frequency.value = 2000;
+    eq.gain.value = Math.min((pitchRatio - 1) * 4, 6);
+    const finalOut = ctx.createGain();
+    output.connect(eq);
+    eq.connect(finalOut);
+    return { input, output: finalOut };
+  } else {
+    // Shifting down - boost lows
+    const eq = ctx.createBiquadFilter();
+    eq.type = 'lowshelf';
+    eq.frequency.value = 500;
+    eq.gain.value = Math.min((1 - pitchRatio) * 6, 8);
+    const finalOut = ctx.createGain();
+    output.connect(eq);
+    eq.connect(finalOut);
+    return { input, output: finalOut };
+  }
 }
 
 // ── App State ────────────────────────────────────────────────────────
