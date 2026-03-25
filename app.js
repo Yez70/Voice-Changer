@@ -283,6 +283,108 @@ const VOICES = [
       dist.connect(gain);
       return gain;
     }
+  },
+  {
+    id: 'feminine',
+    name: 'Feminine',
+    emoji: '\ud83d\udc69',
+    desc: 'Higher pitch & softer',
+    apply(ctx, source) {
+      const pitch = createPitchShifter(ctx, 1.4);
+      source.connect(pitch.input);
+      const highShelf = ctx.createBiquadFilter();
+      highShelf.type = 'highshelf';
+      highShelf.frequency.value = 3000;
+      highShelf.gain.value = 4;
+      const lowShelf = ctx.createBiquadFilter();
+      lowShelf.type = 'lowshelf';
+      lowShelf.frequency.value = 300;
+      lowShelf.gain.value = -6;
+      pitch.output.connect(highShelf);
+      highShelf.connect(lowShelf);
+      return lowShelf;
+    }
+  },
+  {
+    id: 'soprano',
+    name: 'Soprano',
+    emoji: '\ud83c\udfb6',
+    desc: 'High & bright singing voice',
+    apply(ctx, source) {
+      const pitch = createPitchShifter(ctx, 1.6);
+      source.connect(pitch.input);
+      const peak = ctx.createBiquadFilter();
+      peak.type = 'peaking';
+      peak.frequency.value = 4000;
+      peak.Q.value = 1;
+      peak.gain.value = 6;
+      const lowcut = ctx.createBiquadFilter();
+      lowcut.type = 'highpass';
+      lowcut.frequency.value = 250;
+      pitch.output.connect(lowcut);
+      lowcut.connect(peak);
+      return peak;
+    }
+  },
+  {
+    id: 'soft-whisper',
+    name: 'Soft Whisper',
+    emoji: '\ud83e\uddd1\u200d\ud83e\uddb0',
+    desc: 'Breathy & gentle',
+    apply(ctx, source) {
+      const pitch = createPitchShifter(ctx, 1.3);
+      source.connect(pitch.input);
+      const bandpass = ctx.createBiquadFilter();
+      bandpass.type = 'bandpass';
+      bandpass.frequency.value = 2500;
+      bandpass.Q.value = 0.8;
+      const noiseGain = ctx.createGain();
+      noiseGain.gain.value = 0.15;
+      const bufferSize = 2 * ctx.sampleRate;
+      const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+      const data = noiseBuffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = Math.random() * 2 - 1;
+      }
+      const noise = ctx.createBufferSource();
+      noise.buffer = noiseBuffer;
+      noise.loop = true;
+      noise.start();
+      noise.connect(noiseGain);
+      const mix = ctx.createGain();
+      pitch.output.connect(bandpass);
+      bandpass.connect(mix);
+      noiseGain.connect(mix);
+      mix.gain.value = 0.9;
+      return mix;
+    }
+  },
+  {
+    id: 'anime-girl',
+    name: 'Anime Girl',
+    emoji: '\ud83c\udf80',
+    desc: 'Cute & high pitched',
+    apply(ctx, source) {
+      const pitch = createPitchShifter(ctx, 1.7);
+      source.connect(pitch.input);
+      const peak1 = ctx.createBiquadFilter();
+      peak1.type = 'peaking';
+      peak1.frequency.value = 3500;
+      peak1.Q.value = 2;
+      peak1.gain.value = 8;
+      const peak2 = ctx.createBiquadFilter();
+      peak2.type = 'peaking';
+      peak2.frequency.value = 5000;
+      peak2.Q.value = 2;
+      peak2.gain.value = 5;
+      const lowcut = ctx.createBiquadFilter();
+      lowcut.type = 'highpass';
+      lowcut.frequency.value = 300;
+      pitch.output.connect(lowcut);
+      lowcut.connect(peak1);
+      peak1.connect(peak2);
+      return peak2;
+    }
   }
 ];
 
